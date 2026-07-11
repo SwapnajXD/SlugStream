@@ -8,7 +8,7 @@ ENV VITE_PUBLIC_BASE_URL=${VITE_PUBLIC_BASE_URL}
 ENV VITE_API_URL=${VITE_API_URL}
 
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 COPY . .
 RUN npm run build
 
