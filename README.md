@@ -8,14 +8,19 @@ A fully containerized, scalable URL Shortener application built with a modern fu
 
 ## Features
 
-- Custom branded short URLs  
-- PostgreSQL persistent storage  
-- Redis caching for fast redirects  
-- Node.js + Express backend  
-- React + Vite frontend (served via Nginx)  
-- Docker Compose for local development  
-- Optional ngrok integration for public/shareable links  
-- Slug conflict protection and blocked extension security  
+- Custom "freaky phrase" branded short URLs, with a live suspicion-score meter
+- Optional expiration (1 hour / 24 hours / 7 days / 30 days / never)
+- Click tracking per link
+- Anonymous link history stored in your browser, with delete-by-token support
+- QR code for every generated link
+- PostgreSQL persistent storage
+- Redis caching for fast redirects
+- Rate limiting and security headers (helmet) on the API
+- Node.js + Express backend
+- React + Vite frontend (served via Nginx)
+- Docker Compose for local development
+- Optional ngrok integration for public/shareable links
+- Slug conflict protection and blocked extension security
 
 ---
 
@@ -174,30 +179,59 @@ docker compose up
 
 ## POST `/api/shorten`
 
-Creates a new short URL.
+Creates a new short URL. Rate limited to 20 requests/minute per IP.
 
 Request:
 
 ```json
 {
   "longUrl": "https://example.com",
-  "phrase": "my-link"
+  "phrase": "my-link",
+  "ttl": "24h"
 }
 ```
+
+`ttl` is optional and one of `1h`, `24h`, `7d`, `30d`, `never` (default: `never`).
 
 Response:
 
 ```json
 {
-  "slug": "my-link-Ab12Cd"
+  "slug": "my-link-Ab12Cd",
+  "deleteToken": "a24-character-token",
+  "expiresAt": "2026-07-13T10:00:00.000Z"
 }
 ```
+
+`deleteToken` is required to delete the link later — the app stores it in the
+browser's `localStorage` automatically. There's no login system, so anyone who
+holds this token can delete the link; keep the response private if that matters
+to you.
 
 ---
 
 ## GET `/api/resolve/:slug`
 
-Returns the original long URL without redirecting.
+Returns the original long URL without redirecting, and increments the click
+counter. Returns `410` if the link has expired.
+
+---
+
+## GET `/api/urls/:slug/meta`
+
+Returns non-sensitive metadata for a link (`clicks`, `expiresAt`, `expired`) —
+used by the frontend to refresh the "Your links on this device" list. Does not
+return the delete token.
+
+---
+
+## DELETE `/api/urls/:slug`
+
+Deletes a link. Requires the `deleteToken` returned at creation time:
+
+```json
+{ "deleteToken": "a24-character-token" }
+```
 
 ---
 

@@ -9,7 +9,8 @@ if (url) {
   // no-op shim so the app still works without Redis
   client = {
     async get() { return null; },
-    async set() { return 'OK'; }
+    async set() { return 'OK'; },
+    async del() { return 0; }
   };
 }
 

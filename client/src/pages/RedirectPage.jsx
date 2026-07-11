@@ -14,6 +14,8 @@ export default function RedirectPage() {
         if (res.ok && data.longUrl) {
           setStatus('Redirecting…');
           window.location.replace(data.longUrl);
+        } else if (res.status === 410) {
+          setStatus('This link has expired');
         } else {
           setStatus(data.error || 'Link not found');
         }
@@ -24,10 +26,10 @@ export default function RedirectPage() {
   }, [slug]);
 
   return (
-    <div style={{ display: 'grid', placeItems: 'center', height: '70vh', fontFamily: 'system-ui,sans-serif' }}>
+    <div className="page redirect-screen">
       <div>
         <h2>{status}</h2>
-        <p style={{ color: '#666' }}>slug: {slug}</p>
+        <p className="slug-echo">slug: {slug}</p>
       </div>
     </div>
   );

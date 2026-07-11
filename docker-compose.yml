@@ -14,8 +14,11 @@ services:
         #VITE_API_URL: http://localhost:5000
         # ngrok backend:
         # VITE_API_URL: https://your-api-ngrok.ngrok.app
-        VITE_PUBLIC_BASE_URL: "https://untransfixed-lightheartedly-vonda.ngrok-free.dev/r"
-        VITE_API_URL: "https://untransfixed-lightheartedly-vonda.ngrok-free.dev"
+        VITE_PUBLIC_BASE_URL: "http://localhost:8080"
+        VITE_API_URL: "http://localhost:5000"
+        # For ngrok mode, replace both values above with your tunnel's
+        # HTTPS domain, e.g. https://your-subdomain.ngrok-free.dev
+        # (see README.md "Running with ngrok" section)
     ports:
       - "8080:80"
     depends_on:
