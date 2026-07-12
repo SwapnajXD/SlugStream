@@ -206,7 +206,7 @@ Vercel imports directly from a Git provider.
 
 | Variable | Value |
 |---|---|
-| `VITE_API_URL` | Your backend's public URL, e.g. `https://api.yourdomain.com` |
+| `VITE_API_URL` | Your backend's public URL — with Tailscale Funnel (see step 4 below), this looks like `https://your-device.your-tailnet.ts.net` |
 | `VITE_PUBLIC_BASE_URL` | Your Vercel production URL, e.g. `https://aliasly.vercel.app` |
 
 Redeploy after setting these — Vite bakes env vars in at build time, so they
@@ -214,23 +214,41 @@ won't take effect until the next build.
 
 ## 4. Expose your backend with a stable URL
 
-Free-tier ngrok domains rotate every time you restart the tunnel, which means
-you'd have to update `VITE_API_URL` and redeploy on Vercel constantly. For a
-deployment meant to stay up, use **Cloudflare Tunnel** instead — it gives you
-a fixed subdomain on a domain you control, at no cost:
+You don't need a domain or a static IP for this — since your homelab is
+already on Tailscale, use **Tailscale Funnel**. It's available on the free
+Personal plan and gives you a stable `https://your-device.your-tailnet.ts.net`
+URL that stays the same across restarts, unlike a free ngrok tunnel.
 
-1. `cloudflared tunnel login`
-2. `cloudflared tunnel create aliasly-api`
-3. Route DNS: `cloudflared tunnel route dns aliasly-api api.yourdomain.com`
-4. Run it pointed at your backend's port:
-   `cloudflared tunnel run --url http://localhost:5000 aliasly-api`
+1. In the [Tailscale admin console](https://login.tailscale.com/admin/acls),
+   make sure the `funnel` node attribute is allowed for your machine (it's on
+   by default for `autogroup:member` on most tailnets — check under your
+   machine's settings if you're unsure).
+2. On the homelab machine running the backend container, expose the API's
+   port:
+   ```bash
+   tailscale funnel 5000
+   ```
+   The CLI will walk you through a one-time consent step the first time you
+   run it. Once confirmed, `https://your-device.your-tailnet.ts.net` proxies
+   straight to `localhost:5000` — i.e. your `api` container, since
+   `docker-compose.yml` already publishes that port to the host.
+3. Everything else on your tailnet (the `web`/`db`/`redis` containers, SSH,
+   etc.) stays completely private — Funnel only exposes the one port you
+   point it at.
 
-Now `https://api.yourdomain.com` reliably points at your homelab backend.
+Check `tailscale funnel status` any time to confirm what's currently exposed,
+and `tailscale funnel 5000 off` to stop sharing it.
+
+If you get a personal domain later, Cloudflare Tunnel is a reasonable
+alternative for the same purpose — but Funnel is the more direct fit for
+your setup right now since it needs neither.
 
 ## 5. Update CORS on the backend
 
 The backend only accepts requests from origins listed in `FRONTEND_ORIGINS`.
-Add your Vercel domain in `docker-compose.yml` (or `server/.env`):
+Note this is about who can *call* the API — it stays separate from
+`VITE_API_URL`, which is the Funnel URL your frontend calls. Add your Vercel
+domain in `docker-compose.yml` (or `server/.env`):
 
 ```
 FRONTEND_ORIGINS=https://aliasly.vercel.app
