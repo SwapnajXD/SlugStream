@@ -103,6 +103,35 @@ const ttlToExpiresAt = (ttlKey) => {
 const isExpired = (expiresAt) => expiresAt && new Date(expiresAt).getTime() <= Date.now();
 
 /* ----------------------------------------------------------------
+   Background cleanup: periodically purge expired links so they
+   don't just accumulate forever waiting to be reclaimed on demand.
+----------------------------------------------------------------- */
+const CLEANUP_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+
+async function cleanupExpiredLinks() {
+  try {
+    const result = await pool.query(
+      'DELETE FROM urls WHERE expires_at IS NOT NULL AND expires_at <= NOW()'
+    );
+    if (result.rowCount > 0) {
+      log.info({ deleted: result.rowCount }, 'cleaned up expired links');
+    }
+  } catch (e) {
+    log.error(e, 'cleanup job failed');
+  }
+}
+
+const cleanupTimer = setInterval(cleanupExpiredLinks, CLEANUP_INTERVAL_MS);
+cleanupExpiredLinks(); // also run once at startup
+
+const shutdown = () => {
+  clearInterval(cleanupTimer);
+  pool.end().finally(() => process.exit(0));
+};
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+/* ----------------------------------------------------------------
    Health
 ----------------------------------------------------------------- */
 app.get('/health', (req, res) => {
@@ -131,8 +160,10 @@ app.get('/api/available/:phrase', readLimiter, async (req, res) => {
   }
 
   try {
-    const result = await pool.query('SELECT 1 FROM urls WHERE slug = $1 LIMIT 1', [safePhrase]);
-    res.json({ slug: safePhrase, available: result.rows.length === 0 });
+    const result = await pool.query('SELECT expires_at FROM urls WHERE slug = $1 LIMIT 1', [safePhrase]);
+    const row = result.rows[0];
+    const available = !row || isExpired(row.expires_at);
+    res.json({ slug: safePhrase, available });
   } catch (e) {
     log.error(e);
     res.status(500).json({ error: 'Server error' });
@@ -174,8 +205,10 @@ app.post('/api/shorten', createLimiter, async (req, res) => {
     const deleteToken = nanoid(24);
     const slug = safePhrase;
 
-    // 3) Insert - since the slug is just the phrase, a collision means the
-    // phrase is already taken rather than a random-ID retry situation.
+    // 3) Reclaim the slug if it's held by an expired link, then insert.
+    // A collision after this means the slug is taken by a still-live link.
+    await pool.query('DELETE FROM urls WHERE slug = $1 AND expires_at IS NOT NULL AND expires_at <= NOW()', [slug]);
+
     try {
       await pool.query(
         'INSERT INTO urls (slug, long_url, delete_token, expires_at) VALUES ($1, $2, $3, $4)',
@@ -243,19 +276,29 @@ app.get('/api/resolve/:slug', readLimiter, async (req, res) => {
 });
 
 /* ----------------------------------------------------------------
-   GET /api/urls/:slug/meta
-   Returns non-sensitive metadata for a link (used to refresh the
-   client's local history view). Does NOT return the delete token.
+   GET /api/urls/:slug/meta?token=<deleteToken>
+   Returns metadata for a link, but only to whoever holds its delete
+   token - i.e. the browser that created it. This keeps click counts
+   and creation dates from being visible to anyone who merely guesses
+   or knows the phrase.
 ----------------------------------------------------------------- */
 app.get('/api/urls/:slug/meta', readLimiter, async (req, res) => {
   const { slug } = req.params;
+  const { token } = req.query;
+
+  if (!token) {
+    return res.status(403).json({ error: 'Not authorized' });
+  }
+
   try {
     const result = await pool.query(
-      'SELECT slug, long_url, clicks, expires_at, created_at FROM urls WHERE slug = $1 LIMIT 1',
-      [slug]
+      'SELECT slug, long_url, clicks, expires_at, created_at FROM urls WHERE slug = $1 AND delete_token = $2 LIMIT 1',
+      [slug, token]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Link not found' });
+      // Deliberately generic: don't reveal whether the slug exists at
+      // all when the token doesn't match.
+      return res.status(403).json({ error: 'Not authorized' });
     }
     const row = result.rows[0];
     res.json({

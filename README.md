@@ -22,6 +22,7 @@ A fully containerized, scalable URL Shortener application built with a modern fu
 - Docker Compose for local development
 - Optional ngrok integration for public/shareable links
 - Blocked extension security
+- Automatic background cleanup of expired links every 15 minutes
 
 ---
 
@@ -218,8 +219,10 @@ Response:
 }
 ```
 
-If the phrase is already taken, this returns `409` with
-`{ "error": "That phrase is already taken — try another one" }`.
+If the phrase is already taken by a still-live link, this returns `409` with
+`{ "error": "That phrase is already taken — try another one" }`. If the
+existing link at that phrase has already expired, its slug is automatically
+reclaimed and the new link takes over — no manual deletion needed.
 
 `deleteToken` is required to delete the link later — the app stores it in the
 browser's `localStorage` automatically. There's no login system, so anyone who
@@ -235,11 +238,12 @@ counter. Returns `410` if the link has expired.
 
 ---
 
-## GET `/api/urls/:slug/meta`
+## GET `/api/urls/:slug/meta?token=<deleteToken>`
 
-Returns non-sensitive metadata for a link (`clicks`, `expiresAt`, `expired`) —
-used by the frontend to refresh the "Your links on this device" list. Does not
-return the delete token.
+Returns metadata for a link (`clicks`, `expiresAt`, `expired`) — used by the
+frontend to refresh the "Your links on this device" list. Requires the
+`deleteToken` returned at creation time, so only the browser that created a
+link can see its stats; anyone else (even with the exact phrase) gets `403`.
 
 ---
 

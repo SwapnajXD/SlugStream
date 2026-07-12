@@ -17,7 +17,7 @@ export default function LinkHistory({ refreshKey }) {
     // per-entry so one bad fetch doesn't block the rest of the list.
     stored.forEach(async (entry) => {
       try {
-        const res = await fetch(`${API_URL}/api/urls/${entry.slug}/meta`);
+        const res = await fetch(`${API_URL}/api/urls/${entry.slug}/meta?token=${encodeURIComponent(entry.deleteToken)}`);
         if (!res.ok) return;
         const data = await res.json();
         setMeta((prev) => ({ ...prev, [entry.slug]: { clicks: data.clicks, expired: data.expired } }));
