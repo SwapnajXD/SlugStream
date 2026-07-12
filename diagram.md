@@ -86,7 +86,7 @@ flowchart LR
 
 **Deployment and env vars**
 - Key env vars in [docker-compose.yml](docker-compose.yml):
-	- `DATABASE_URL` e.g. `postgresql://user:password@db:5432/slugstream` (Postgres service `db`).
+	- `DATABASE_URL` e.g. `postgresql://user:password@db:5432/aliasly` (Postgres service `db`).
 	- `REDIS_URL` e.g. `redis://redis:6379` (Redis service `redis`).
 	- `FRONTEND_ORIGINS` controls CORS allow-list for the API.
 	- `VITE_API_URL` and `VITE_PUBLIC_BASE_URL` are build-time args for the SPA (see [client/Dockerfile](client/Dockerfile)).

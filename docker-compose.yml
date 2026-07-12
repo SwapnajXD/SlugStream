@@ -30,7 +30,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 5000
-      DATABASE_URL: postgresql://user:password@db:5432/slugstream
+      DATABASE_URL: postgresql://user:password@db:5432/aliasly
       REDIS_URL: redis://redis:6379
       # Comma-separated list of allowed frontend origins for CORS
       FRONTEND_ORIGINS: http://localhost:8080,http://localhost:5173
@@ -47,11 +47,11 @@ services:
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: slugstream
+      POSTGRES_DB: aliasly
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d slugstream"]
+      test: ["CMD-SHELL", "pg_isready -U user -d aliasly"]
       interval: 5s
       timeout: 5s
       retries: 10
