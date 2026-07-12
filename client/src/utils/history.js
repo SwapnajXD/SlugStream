@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'slugstream:history';
+const STORAGE_KEY = 'aliasly:history';
 
 function readAll() {
   try {

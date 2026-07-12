@@ -8,7 +8,7 @@ import { pool, connectDB } from './config/db.js';
 import redis from './config/redis.js';
 import blockedExtensions from './utils/blockedExtensions.js';
 
-const log = pino({ name: 'slugstream-api' });
+const log = pino({ name: 'aliasly-api' });
 const app = express();
 
 app.set('trust proxy', 1);
@@ -115,8 +115,33 @@ app.get('/health', (req, res) => {
 });
 
 /* ----------------------------------------------------------------
+   GET /api/available/:phrase
+   Returns: { slug, available }
+   Lets the UI check before submitting, now that the phrase IS the slug.
+----------------------------------------------------------------- */
+app.get('/api/available/:phrase', readLimiter, async (req, res) => {
+  const safePhrase = String(req.params.phrase || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\-]+/g, '-')
+    .replace(/(^-+)|(-+$)/g, '')
+    .slice(0, 30);
+
+  if (!safePhrase) {
+    return res.json({ slug: '', available: false });
+  }
+
+  try {
+    const result = await pool.query('SELECT 1 FROM urls WHERE slug = $1 LIMIT 1', [safePhrase]);
+    res.json({ slug: safePhrase, available: result.rows.length === 0 });
+  } catch (e) {
+    log.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/* ----------------------------------------------------------------
    POST /api/shorten
-   Body: { longUrl, phrase?, ttl? }
+   Body: { longUrl, phrase, ttl? }
    Returns: { slug, deleteToken, expiresAt }
 ----------------------------------------------------------------- */
 app.post('/api/shorten', createLimiter, async (req, res) => {
@@ -134,37 +159,34 @@ app.post('/api/shorten', createLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Invalid expiration option' });
     }
 
-    // 2) Normalize phrase (optional)
+    // 2) Normalize phrase - this is now the entire slug, so it's required
     const safePhrase = String(phrase)
       .toLowerCase()
       .replace(/[^a-z0-9\-]+/g, '-')
       .replace(/(^-+)|(-+$)/g, '')
-      .slice(0, 60);
+      .slice(0, 30);
+
+    if (!safePhrase) {
+      return res.status(400).json({ error: 'Please enter a custom phrase for your link' });
+    }
 
     const expiresAt = ttlToExpiresAt(ttl);
     const deleteToken = nanoid(24);
+    const slug = safePhrase;
 
-    // 3) Generate slug and insert with tiny retry for rare collisions
-    let slug;
-    let attempts = 0;
-
-    while (attempts < 3) {
-      const id = nanoid(6);
-      slug = `${safePhrase ? `${safePhrase}-` : ''}${id}`;
-      try {
-        await pool.query(
-          'INSERT INTO urls (slug, long_url, delete_token, expires_at) VALUES ($1, $2, $3, $4)',
-          [slug, longUrl, deleteToken, expiresAt]
-        );
-        break; // success
-      } catch (e) {
-        // 23505 = unique_violation
-        if (e?.code === '23505') {
-          attempts += 1;
-          continue;
-        }
-        throw e;
+    // 3) Insert - since the slug is just the phrase, a collision means the
+    // phrase is already taken rather than a random-ID retry situation.
+    try {
+      await pool.query(
+        'INSERT INTO urls (slug, long_url, delete_token, expires_at) VALUES ($1, $2, $3, $4)',
+        [slug, longUrl, deleteToken, expiresAt]
+      );
+    } catch (e) {
+      // 23505 = unique_violation
+      if (e?.code === '23505') {
+        return res.status(409).json({ error: 'That phrase is already taken — try another one' });
       }
+      throw e;
     }
 
     // 4) Prime Redis (1 hour, or less if the link expires sooner)

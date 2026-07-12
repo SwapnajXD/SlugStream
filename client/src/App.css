@@ -172,40 +172,29 @@ input[type="text"]:focus, input[type="url"]:focus, select:focus {
   color: var(--hazard);
 }
 
-/* ---- Freaky meter (signature element) ---- */
-.freaky-meter {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 28px;
-}
-
-.freaky-bar {
-  flex: 1;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--line);
-  overflow: hidden;
-}
-
-.freaky-bar-fill {
-  height: 100%;
-  border-radius: 999px;
-  transition: width 0.25s ease, background-color 0.25s ease;
-}
-
-.freaky-bar-fill.none { background: var(--line); }
-.freaky-bar-fill.low { background: #8a8151; }
-.freaky-bar-fill.medium { background: var(--hazard); }
-.freaky-bar-fill.high { background: #c1591f; }
-.freaky-bar-fill.max { background: var(--danger); }
-
-.freaky-label {
+/* ---- URL preview ---- */
+.url-preview {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--ink-soft);
-  white-space: nowrap;
+  margin-top: 4px;
+  word-break: break-all;
 }
+
+.url-preview-count {
+  color: var(--line-strong);
+}
+
+.availability {
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.availability.checking { color: var(--ink-soft); }
+.availability.available { color: var(--success); }
+.availability.taken { color: var(--danger); }
 
 /* ---- Buttons ---- */
 button.primary {
@@ -307,9 +296,13 @@ button.ghost:hover { border-color: var(--danger); color: var(--danger); }
   white-space: nowrap;
 }
 
-.stamp.max, .stamp.high { color: var(--danger); }
-.stamp.medium { color: #a5680f; }
-.stamp.low, .stamp.none { color: var(--success); }
+.stamp.live { color: var(--success); }
+
+.hint-label {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
 
 .case-file-actions {
   display: flex;

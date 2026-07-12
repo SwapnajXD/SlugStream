@@ -1,4 +1,4 @@
-# SlugStream — Production-Ready URL Shortener
+# Aliasly — Production-Ready URL Shortener
 
 PostgreSQL + Redis + Node.js (Express) + React (Vite) + Docker + ngrok
 
@@ -8,7 +8,8 @@ A fully containerized, scalable URL Shortener application built with a modern fu
 
 ## Features
 
-- Custom "freaky phrase" branded short URLs, with a live suspicion-score meter
+- Custom phrase-based short URLs — the phrase you choose IS the slug, no random ID appended
+- Live availability check as you type
 - Optional expiration (1 hour / 24 hours / 7 days / 30 days / never)
 - Click tracking per link
 - Anonymous link history stored in your browser, with delete-by-token support
@@ -20,14 +21,14 @@ A fully containerized, scalable URL Shortener application built with a modern fu
 - React + Vite frontend (served via Nginx)
 - Docker Compose for local development
 - Optional ngrok integration for public/shareable links
-- Slug conflict protection and blocked extension security
+- Blocked extension security
 
 ---
 
 ## Project Structure
 
 ```
-SlugStream/
+Aliasly/
 ├── docker-compose.yml
 ├── client/      # React + Vite frontend (served via Nginx)
 └── server/      # Express API + PostgreSQL + Redis
@@ -177,9 +178,23 @@ docker compose up
 
 # API Endpoints
 
+## GET `/api/available/:phrase`
+
+Checks whether a phrase is free before you submit the form.
+
+Response:
+
+```json
+{ "slug": "my-link", "available": true }
+```
+
+---
+
 ## POST `/api/shorten`
 
 Creates a new short URL. Rate limited to 20 requests/minute per IP.
+`phrase` is now **required** — there's no random ID appended, so the phrase
+you choose becomes the slug directly.
 
 Request:
 
@@ -197,11 +212,14 @@ Response:
 
 ```json
 {
-  "slug": "my-link-Ab12Cd",
+  "slug": "my-link",
   "deleteToken": "a24-character-token",
   "expiresAt": "2026-07-13T10:00:00.000Z"
 }
 ```
+
+If the phrase is already taken, this returns `409` with
+`{ "error": "That phrase is already taken — try another one" }`.
 
 `deleteToken` is required to delete the link later — the app stores it in the
 browser's `localStorage` automatically. There's no login system, so anyone who

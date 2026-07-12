@@ -23,14 +23,14 @@ export default function App() {
       <div className="masthead">
         <div className="masthead-badge"><ShieldAlert size={22} /></div>
         <div>
-          <h1>SlugStream</h1>
-          <span className="tag">Case File // URL Shortener</span>
+          <h1>Aliasly</h1>
+          <span className="tag">Custom Short Links // Case File</span>
         </div>
       </div>
 
       <p className="tagline">
-        Make your URLs look <b>freaky</b> with a custom phrase — the redirect itself
-        stays clean, deterministic, and safe under the hood.
+        Give your links a <b>custom short alias</b> — pick a memorable phrase,
+        and the redirect stays clean, deterministic, and safe under the hood.
       </p>
 
       <LinkForm onCreated={handleCreated} />
@@ -40,7 +40,6 @@ export default function App() {
           slug={result.slug}
           deleteToken={result.deleteToken}
           expiresAt={result.expiresAt}
-          freaky={result.freaky}
           onDeleted={handleDeleted}
         />
       )}

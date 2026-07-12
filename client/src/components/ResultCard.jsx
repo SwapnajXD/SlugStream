@@ -10,13 +10,11 @@ function formatExpiry(expiresAt) {
   return `Expires ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-export default function ResultCard({ slug, deleteToken, expiresAt, freaky, onDeleted }) {
+export default function ResultCard({ slug, deleteToken, expiresAt, onDeleted }) {
   const full = `${FRONTEND_BASE}/${slug}`;
   const [showQr, setShowQr] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const showToast = useToast();
-  const tier = freaky?.tier || 'none';
-  const label = freaky?.label || 'Plain and boring';
 
   const copy = async () => {
     try {
@@ -57,7 +55,7 @@ export default function ResultCard({ slug, deleteToken, expiresAt, freaky, onDel
           <span className="redact-bar">CASE FILE // NEW LINK</span>
           <div className="slug-line">{full}</div>
         </div>
-        <span className={`stamp ${tier}`}>{label}</span>
+        <span className="stamp live">Live</span>
       </div>
 
       <div className="case-file-meta">
@@ -78,7 +76,7 @@ export default function ResultCard({ slug, deleteToken, expiresAt, freaky, onDel
       {showQr && (
         <div className="qr-wrap">
           <img src={qrUrl} alt={`QR code for ${full}`} width={140} height={140} />
-          <span className="freaky-label">Scan to open the freaky link</span>
+          <span className="hint-label">Scan to open this link</span>
         </div>
       )}
     </div>

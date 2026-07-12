@@ -1,4 +1,4 @@
-**Architecture Diagram — SlugStream**
+**Architecture Diagram — Aliasly**
 
 ```mermaid
 flowchart LR
@@ -28,7 +28,7 @@ flowchart LR
 ```
 
 **Overview**
-- **Purpose:** SlugStream is a lightweight URL shortener. The frontend is a Vite + React SPA; the backend is an Express API that uses Postgres for durable storage and Redis as an optional cache.
+- **Purpose:** Aliasly is a lightweight URL shortener. The frontend is a Vite + React SPA; the backend is an Express API that uses Postgres for durable storage and Redis as an optional cache.
 
 **Services (Docker / runtime)**
 - **web:** Static SPA served by `nginx` (see [docker-compose.yml](docker-compose.yml)). Built from [client/Dockerfile](client/Dockerfile).

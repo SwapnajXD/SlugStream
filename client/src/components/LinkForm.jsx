@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react';
-import { Link2, Tag, Send, AlertTriangle } from 'lucide-react';
-import { API_URL } from '../config/constants.js';
+import { useEffect, useMemo, useState } from 'react';
+import { Link2, Tag, Send, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
+import { API_URL, FRONTEND_BASE } from '../config/constants.js';
 import { validateUrl } from '../utils/validation.js';
-import { calculateFreakyScore } from '../utils/freakyCalculator.js';
 import { addToHistory } from '../utils/history.js';
 import { useToast } from './Toast.jsx';
 
@@ -20,9 +19,38 @@ export default function LinkForm({ onCreated }) {
   const [ttl, setTtl] = useState('never');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [availability, setAvailability] = useState(null); // null | 'checking' | 'available' | 'taken'
   const showToast = useToast();
 
-  const freaky = useMemo(() => calculateFreakyScore(phrase), [phrase]);
+  const normalizedPhrase = useMemo(
+    () =>
+      phrase
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, '-')
+        .replace(/(^-+)|(-+$)/g, ''),
+    [phrase]
+  );
+
+  const previewUrl = `${FRONTEND_BASE}/${normalizedPhrase || '…'}`;
+
+  // Debounced live availability check against the backend
+  useEffect(() => {
+    if (!normalizedPhrase) {
+      setAvailability(null);
+      return;
+    }
+    setAvailability('checking');
+    const handle = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/available/${encodeURIComponent(normalizedPhrase)}`);
+        const data = await res.json();
+        setAvailability(data.available ? 'available' : 'taken');
+      } catch {
+        setAvailability(null);
+      }
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [normalizedPhrase]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -30,6 +58,10 @@ export default function LinkForm({ onCreated }) {
 
     if (!validateUrl(longUrl)) {
       setError('Please enter a valid http(s) URL');
+      return;
+    }
+    if (!normalizedPhrase) {
+      setError('Please enter a custom phrase for your link');
       return;
     }
 
@@ -44,9 +76,10 @@ export default function LinkForm({ onCreated }) {
       if (!res.ok) throw new Error(data.error || 'Failed to shorten');
 
       addToHistory({ slug: data.slug, longUrl, deleteToken: data.deleteToken, expiresAt: data.expiresAt });
-      onCreated({ ...data, longUrl, freaky });
-      showToast('Freaky link created', { tone: 'success' });
+      onCreated({ ...data, longUrl });
+      showToast('Link created', { tone: 'success' });
       setPhrase('');
+      setAvailability(null);
     } catch (err) {
       setError(err.message);
       showToast(err.message, { tone: 'error' });
@@ -72,26 +105,27 @@ export default function LinkForm({ onCreated }) {
       </div>
 
       <div className="field">
-        <label htmlFor="phrase">Freaky phrase (optional)</label>
+        <label htmlFor="phrase">Custom phrase</label>
         <div className="input-row">
           <Tag size={16} />
           <input
             id="phrase"
             type="text"
-            placeholder="totally-not-a-virus"
+            placeholder="my-project-launch"
             value={phrase}
             onChange={(e) => setPhrase(e.target.value)}
-            maxLength={60}
+            maxLength={30}
           />
         </div>
-        <div className="freaky-meter">
-          <div className="freaky-bar">
-            <div
-              className={`freaky-bar-fill ${freaky.tier}`}
-              style={{ width: `${freaky.score}%` }}
-            />
-          </div>
-          <span className="freaky-label">{freaky.label}</span>
+        <div className="url-preview">
+          {previewUrl} <span className="url-preview-count">({previewUrl.length} chars)</span>
+          {availability === 'checking' && <span className="availability checking">checking…</span>}
+          {availability === 'available' && (
+            <span className="availability available"><CheckCircle2 size={13} /> available</span>
+          )}
+          {availability === 'taken' && (
+            <span className="availability taken"><XCircle size={13} /> already taken</span>
+          )}
         </div>
       </div>
 
@@ -111,9 +145,9 @@ export default function LinkForm({ onCreated }) {
         </div>
       </div>
 
-      <button type="submit" className="primary" disabled={busy}>
+      <button type="submit" className="primary" disabled={busy || availability === 'taken'}>
         <Send size={15} />
-        {busy ? 'Creating…' : 'Create freaky URL'}
+        {busy ? 'Creating…' : 'Create short link'}
       </button>
 
       {error && (
