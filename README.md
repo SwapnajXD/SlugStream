@@ -177,7 +177,80 @@ docker compose up
 
 ---
 
-# API Endpoints
+# Deploying the Frontend to Vercel
+
+The frontend is a static Vite/React SPA — a natural fit for Vercel. The
+backend (Postgres, Redis, and a background cleanup job) is **not** a good fit
+for Vercel's serverless functions, which are stateless and short-lived, so
+the recommended split is:
+
+- **Frontend** → Vercel (free, zero-config for Vite)
+- **Backend** → stays wherever it already runs well (your homelab, a VM,
+  Render, Railway, etc.), exposed publicly through a tunnel
+
+## 1. Push the repo to GitHub
+
+Vercel imports directly from a Git provider.
+
+## 2. Import the project in Vercel
+
+- New Project → import your repo
+- **Root Directory:** `client` (important — this repo is a monorepo, and
+  Vercel needs to know the frontend lives in a subfolder)
+- Framework preset: Vite (auto-detected)
+- A `client/vercel.json` is already included with the SPA rewrite rule
+  needed so routes like `/your-phrase` work correctly on direct visit/refresh,
+  not just client-side navigation.
+
+## 3. Set environment variables (Vercel Project Settings → Environment Variables)
+
+| Variable | Value |
+|---|---|
+| `VITE_API_URL` | Your backend's public URL, e.g. `https://api.yourdomain.com` |
+| `VITE_PUBLIC_BASE_URL` | Your Vercel production URL, e.g. `https://aliasly.vercel.app` |
+
+Redeploy after setting these — Vite bakes env vars in at build time, so they
+won't take effect until the next build.
+
+## 4. Expose your backend with a stable URL
+
+Free-tier ngrok domains rotate every time you restart the tunnel, which means
+you'd have to update `VITE_API_URL` and redeploy on Vercel constantly. For a
+deployment meant to stay up, use **Cloudflare Tunnel** instead — it gives you
+a fixed subdomain on a domain you control, at no cost:
+
+1. `cloudflared tunnel login`
+2. `cloudflared tunnel create aliasly-api`
+3. Route DNS: `cloudflared tunnel route dns aliasly-api api.yourdomain.com`
+4. Run it pointed at your backend's port:
+   `cloudflared tunnel run --url http://localhost:5000 aliasly-api`
+
+Now `https://api.yourdomain.com` reliably points at your homelab backend.
+
+## 5. Update CORS on the backend
+
+The backend only accepts requests from origins listed in `FRONTEND_ORIGINS`.
+Add your Vercel domain in `docker-compose.yml` (or `server/.env`):
+
+```
+FRONTEND_ORIGINS=https://aliasly.vercel.app
+```
+
+Then restart the backend:
+
+```bash
+docker compose up -d api
+```
+
+Note: Vercel also creates a random preview URL for every branch/PR deploy
+(e.g. `aliasly-git-feature-x.vercel.app`). Those won't be in your CORS
+allow-list by default — add them individually if you need preview
+deployments to reach the real backend, or just test previews against a local
+backend instead.
+
+---
+
+
 
 ## GET `/api/available/:phrase`
 
