@@ -3,6 +3,7 @@ import { ShieldAlert } from 'lucide-react';
 import LinkForm from './components/LinkForm.jsx';
 import ResultCard from './components/ResultCard.jsx';
 import LinkHistory from './components/LinkHistory.jsx';
+import Dashboard from './components/Dashboard.jsx';
 
 export default function App() {
   const [result, setResult] = useState(null);
@@ -40,12 +41,16 @@ export default function App() {
           slug={result.slug}
           deleteToken={result.deleteToken}
           expiresAt={result.expiresAt}
+          hasPassword={result.hasPassword}
+          longUrl={result.longUrl}
           onDeleted={handleDeleted}
         />
       )}
 
+      <Dashboard refreshKey={historyKey} />
+
       <div className="section-label">Your links on this device</div>
-      <LinkHistory refreshKey={historyKey} />
+      <LinkHistory refreshKey={historyKey} onChanged={() => setHistoryKey((k) => k + 1)} />
     </div>
   );
 }

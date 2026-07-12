@@ -135,7 +135,7 @@ input, button, select { font: inherit; }
   pointer-events: none;
 }
 
-input[type="text"], input[type="url"] {
+input[type="text"], input[type="url"], input[type="password"] {
   width: 100%;
   border: 1.5px solid var(--line-strong);
   background: #fbf9f1;
@@ -144,7 +144,7 @@ input[type="text"], input[type="url"] {
   padding: 11px 12px 11px 38px;
 }
 
-input[type="text"]:focus, input[type="url"]:focus, select:focus {
+input[type="text"]:focus, input[type="url"]:focus, input[type="password"]:focus, select:focus {
   outline: 2px solid var(--hazard);
   outline-offset: 1px;
 }
@@ -245,6 +245,62 @@ button.ghost:hover { border-color: var(--danger); color: var(--danger); }
   align-items: flex-start;
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--danger);
+  cursor: pointer;
+}
+
+.turnstile-widget {
+  margin: 4px 0;
+}
+
+.edit-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.edit-row input {
+  flex: 1;
+  border: 1.5px solid var(--line-strong);
+  background: #fbf9f1;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.unlock-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  width: 220px;
+}
+
+.unlock-form input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1.5px solid var(--line-strong);
+  background: #fbf9f1;
+  border-radius: 4px;
+  padding: 9px 12px;
+  text-align: center;
+}
+
 /* ---- Result card ("case file") ---- */
 .case-file {
   margin-top: 24px;
@@ -297,6 +353,25 @@ button.ghost:hover { border-color: var(--danger); color: var(--danger); }
 }
 
 .stamp.live { color: var(--success); }
+.stamp.locked { color: var(--ink-soft); display: inline-flex; align-items: center; gap: 4px; }
+
+.stamp-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.lock-badge {
+  color: var(--danger);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.favicon {
+  border-radius: 2px;
+  flex-shrink: 0;
+}
 
 .hint-label {
   font-family: var(--font-mono);
@@ -337,6 +412,39 @@ button.ghost:hover { border-color: var(--danger); color: var(--danger); }
   padding: 4px;
 }
 
+/* ---- Dashboard ---- */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 8px;
+  margin: 20px 0;
+}
+
+.dashboard-card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px 8px;
+  text-align: center;
+  background: rgba(255,255,255,0.35);
+  color: var(--ink-soft);
+}
+
+.dashboard-value {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-top: 4px;
+}
+
+.dashboard-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+
 /* ---- History list ---- */
 .history-empty {
   color: var(--ink-soft);
@@ -359,16 +467,28 @@ button.ghost:hover { border-color: var(--danger); color: var(--danger); }
   background: rgba(255,255,255,0.35);
 }
 
+.history-item-main {
+  min-width: 0;
+  flex: 1;
+}
+
 .history-item .slug {
   font-family: var(--font-mono);
   font-size: 13.5px;
   font-weight: 600;
 }
 
-.history-item .long-url {
+.long-url {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: var(--ink-soft);
   max-width: 320px;
+  overflow: hidden;
+}
+
+.long-url span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -496,8 +616,8 @@ button.ghost:hover { border-color: var(--danger); color: var(--danger); }
     --line-strong: #574e37;
   }
   body { background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.045) 1px, transparent 0); }
-  .case-file, input[type="text"], input[type="url"] { background: #211d15; }
-  .history-item { background: rgba(255,255,255,0.03); }
+  .case-file, input[type="text"], input[type="url"], input[type="password"], .edit-row input, .unlock-form input { background: #211d15; }
+  .history-item, .dashboard-card { background: rgba(255,255,255,0.03); }
   .qr-wrap img { background: #fff; }
 }
 

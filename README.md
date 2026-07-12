@@ -11,9 +11,16 @@ A fully containerized, scalable URL Shortener application built with a modern fu
 - Custom phrase-based short URLs — the phrase you choose IS the slug, no random ID appended
 - Live availability check as you type
 - Optional expiration (1 hour / 24 hours / 7 days / 30 days / never)
+- Optional password protection per link
+- Edit a link's destination after creation, without changing its slug
 - Click tracking per link
+- Lightweight link previews (favicon + domain) shown client-side, no server-side URL fetching
+- A personal stats dashboard (links, total clicks, active/expired/protected counts) from your own browser history
 - Anonymous link history stored in your browser, with delete-by-token support
 - QR code for every generated link
+- Optional malicious-URL screening via Google Safe Browsing (opt-in via API key)
+- Optional CAPTCHA (Cloudflare Turnstile) on link creation (opt-in via site/secret keys)
+- PWA-installable (manifest + icon) and Open Graph/Twitter Card tags for nicer link previews
 - PostgreSQL persistent storage
 - Redis caching for fast redirects
 - Rate limiting and security headers (helmet) on the API
@@ -294,11 +301,21 @@ Request:
 {
   "longUrl": "https://example.com",
   "phrase": "my-link",
-  "ttl": "24h"
+  "ttl": "24h",
+  "password": "optional-password",
+  "turnstileToken": "only-needed-if-captcha-is-enabled"
 }
 ```
 
 `ttl` is optional and one of `1h`, `24h`, `7d`, `30d`, `never` (default: `never`).
+`password` is optional — if set, the link requires that password before it
+resolves (see `POST /api/unlock/:slug` below). `turnstileToken` is only
+checked if `TURNSTILE_SECRET_KEY` is configured on the backend; omit it
+entirely in local dev.
+
+If `GOOGLE_SAFE_BROWSING_API_KEY` is configured, the URL is also screened
+against Google's threat lists before the link is created; flagged URLs are
+rejected with `400`.
 
 Response:
 
@@ -306,7 +323,8 @@ Response:
 {
   "slug": "my-link",
   "deleteToken": "a24-character-token",
-  "expiresAt": "2026-07-13T10:00:00.000Z"
+  "expiresAt": "2026-07-13T10:00:00.000Z",
+  "hasPassword": false
 }
 ```
 
@@ -315,26 +333,58 @@ If the phrase is already taken by a still-live link, this returns `409` with
 existing link at that phrase has already expired, its slug is automatically
 reclaimed and the new link takes over — no manual deletion needed.
 
-`deleteToken` is required to delete the link later — the app stores it in the
-browser's `localStorage` automatically. There's no login system, so anyone who
-holds this token can delete the link; keep the response private if that matters
-to you.
+`deleteToken` is required to delete or edit the link later — the app stores
+it in the browser's `localStorage` automatically. There's no login system,
+so anyone who holds this token can manage the link; keep the response
+private if that matters to you.
 
 ---
 
 ## GET `/api/resolve/:slug`
 
 Returns the original long URL without redirecting, and increments the click
-counter. Returns `410` if the link has expired.
+counter. Returns `410` if the link has expired, or `401` with
+`{ "passwordRequired": true }` if the link is password-protected (the
+destination and click count are withheld until unlocked).
+
+---
+
+## POST `/api/unlock/:slug`
+
+Verifies a password-protected link's password and returns its destination on
+success. Rate limited to 10 attempts/minute per IP to slow brute-forcing.
+
+Request:
+
+```json
+{ "password": "the-link-password" }
+```
+
+Response on success: `{ "longUrl": "https://example.com" }`. Returns `401`
+with `{ "error": "Incorrect password" }` on a wrong guess.
 
 ---
 
 ## GET `/api/urls/:slug/meta?token=<deleteToken>`
 
-Returns metadata for a link (`clicks`, `expiresAt`, `expired`) — used by the
-frontend to refresh the "Your links on this device" list. Requires the
-`deleteToken` returned at creation time, so only the browser that created a
-link can see its stats; anyone else (even with the exact phrase) gets `403`.
+Returns metadata for a link (`clicks`, `expiresAt`, `expired`, `hasPassword`)
+— used by the frontend to refresh the "Your links on this device" list and
+the stats dashboard. Requires the `deleteToken` returned at creation time, so
+only the browser that created a link can see its stats; anyone else (even
+with the exact phrase) gets `403`.
+
+---
+
+## PATCH `/api/urls/:slug`
+
+Changes a link's destination without changing its slug. Requires the
+`deleteToken` returned at creation time:
+
+```json
+{ "deleteToken": "a24-character-token", "longUrl": "https://new-destination.com" }
+```
+
+The new URL is re-screened by Safe Browsing if that check is configured.
 
 ---
 
@@ -350,12 +400,14 @@ Deletes a link. Requires the `deleteToken` returned at creation time:
 
 ## GET `/r/:slug`
 
-Public redirect endpoint used for shareable links.
+Public redirect endpoint used for shareable links. If the link is
+password-protected, this serves a small self-contained password prompt page
+instead of redirecting immediately.
 
 Example:
 
 ```
-https://<ngrok-domain>/r/my-link-Ab12Cd
+https://<ngrok-domain>/r/my-link
 ```
 
 Redirects to the stored long URL.

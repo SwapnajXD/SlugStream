@@ -1,0 +1,12 @@
+{
+  "name": "Aliasly — Custom Short Links",
+  "short_name": "Aliasly",
+  "description": "Create clean, custom-phrase short links.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ede8d8",
+  "theme_color": "#211d14",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

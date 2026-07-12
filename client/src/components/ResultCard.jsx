@@ -1,7 +1,9 @@
-import { Copy, QrCode, Trash2, Clock, MousePointerClick } from 'lucide-react';
+import { Copy, QrCode, Trash2, Clock, MousePointerClick, Lock, Pencil, Check, X } from 'lucide-react';
 import { useState } from 'react';
 import { FRONTEND_BASE, API_URL } from '../config/constants.js';
 import { removeFromHistory } from '../utils/history.js';
+import { getFaviconUrl, getHostname } from '../utils/linkPreview.js';
+import { validateUrl } from '../utils/validation.js';
 import { useToast } from './Toast.jsx';
 
 function formatExpiry(expiresAt) {
@@ -10,10 +12,13 @@ function formatExpiry(expiresAt) {
   return `Expires ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-export default function ResultCard({ slug, deleteToken, expiresAt, onDeleted }) {
+export default function ResultCard({ slug, deleteToken, expiresAt, hasPassword, longUrl, onDeleted }) {
   const full = `${FRONTEND_BASE}/${slug}`;
   const [showQr, setShowQr] = useState(false);
   const [deleted, setDeleted] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(longUrl || '');
+  const [currentUrl, setCurrentUrl] = useState(longUrl || '');
   const showToast = useToast();
 
   const copy = async () => {
@@ -44,9 +49,31 @@ export default function ResultCard({ slug, deleteToken, expiresAt, onDeleted }) 
     }
   };
 
+  const saveEdit = async () => {
+    if (!validateUrl(editValue)) {
+      showToast('Please enter a valid http(s) URL', { tone: 'error' });
+      return;
+    }
+    try {
+      const res = await fetch(`${API_URL}/api/urls/${slug}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deleteToken, longUrl: editValue }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update');
+      setCurrentUrl(editValue);
+      setEditing(false);
+      showToast('Destination updated', { tone: 'success' });
+    } catch (err) {
+      showToast(err.message, { tone: 'error' });
+    }
+  };
+
   if (deleted) return null;
 
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(full)}`;
+  const favicon = getFaviconUrl(currentUrl);
 
   return (
     <div className="case-file">
@@ -54,9 +81,31 @@ export default function ResultCard({ slug, deleteToken, expiresAt, onDeleted }) 
         <div>
           <span className="redact-bar">CASE FILE // NEW LINK</span>
           <div className="slug-line">{full}</div>
+          {currentUrl && (
+            <div className="long-url" style={{ marginTop: 6 }}>
+              {favicon && <img src={favicon} alt="" width={14} height={14} className="favicon" />}
+              <span>{getHostname(currentUrl) || currentUrl}</span>
+            </div>
+          )}
         </div>
-        <span className="stamp live">Live</span>
+        <div className="stamp-stack">
+          <span className="stamp live">Live</span>
+          {hasPassword && <span className="stamp locked"><Lock size={11} /> Locked</span>}
+        </div>
       </div>
+
+      {editing && (
+        <div className="edit-row" style={{ marginTop: 10 }}>
+          <input
+            type="url"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            placeholder="https://new-destination.com"
+          />
+          <button className="icon-btn" title="Save" onClick={saveEdit}><Check size={14} /></button>
+          <button className="icon-btn" title="Cancel" onClick={() => setEditing(false)}><X size={14} /></button>
+        </div>
+      )}
 
       <div className="case-file-meta">
         <span><Clock size={13} /> {formatExpiry(expiresAt)}</span>
@@ -68,6 +117,9 @@ export default function ResultCard({ slug, deleteToken, expiresAt, onDeleted }) 
         <button className="ghost" onClick={() => setShowQr((v) => !v)}>
           <QrCode size={14} /> {showQr ? 'Hide QR' : 'Show QR'}
         </button>
+        {deleteToken && !editing && (
+          <button className="ghost" onClick={() => setEditing(true)}><Pencil size={14} /> Edit</button>
+        )}
         {deleteToken && (
           <button className="ghost" onClick={del}><Trash2 size={14} /> Delete</button>
         )}

@@ -7,6 +7,8 @@ import { nanoid } from 'nanoid';
 import { pool, connectDB } from './config/db.js';
 import redis from './config/redis.js';
 import blockedExtensions from './utils/blockedExtensions.js';
+import { hashPassword, verifyPassword } from './utils/password.js';
+import { checkUrlSafety, verifyTurnstile } from './utils/safety.js';
 
 const log = pino({ name: 'aliasly-api' });
 const app = express();
@@ -102,6 +104,66 @@ const ttlToExpiresAt = (ttlKey) => {
 
 const isExpired = (expiresAt) => expiresAt && new Date(expiresAt).getTime() <= Date.now();
 
+const passwordGateHtml = (slug) => `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex" />
+<title>Password required — Aliasly</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace; background: #ede8d8; color: #211d14;
+    display: grid; place-items: center; height: 100vh; margin: 0; }
+  .card { max-width: 340px; padding: 24px; border: 1.5px solid #a89c78; border-radius: 6px; background: #fbf9f1; text-align: center; }
+  h1 { font-size: 15px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 14px; }
+  input { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1.5px solid #a89c78; border-radius: 4px;
+    margin-bottom: 10px; font: inherit; background: #fff; }
+  button { width: 100%; padding: 10px; border: 0; border-radius: 4px; background: #211d14; color: #d99a1b;
+    font: inherit; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; }
+  .err { color: #a3271f; font-size: 12px; min-height: 16px; margin-top: 8px; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #17140f; color: #ece6d4; }
+    .card { background: #211d15; border-color: #574e37; }
+    input { background: #17140f; color: #ece6d4; border-color: #574e37; }
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>This link is password protected</h1>
+    <form id="f">
+      <input type="password" id="pw" placeholder="Password" autofocus required />
+      <button type="submit">Unlock</button>
+      <div class="err" id="err"></div>
+    </form>
+  </div>
+  <script>
+    document.getElementById('f').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const pw = document.getElementById('pw').value;
+      const errEl = document.getElementById('err');
+      errEl.textContent = '';
+      try {
+        const res = await fetch('/api/unlock/${slug}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pw })
+        });
+        const data = await res.json();
+        if (res.ok && data.longUrl) {
+          window.location.href = data.longUrl;
+        } else {
+          errEl.textContent = data.error || 'Incorrect password';
+        }
+      } catch {
+        errEl.textContent = 'Something went wrong. Please try again.';
+      }
+    });
+  </script>
+</body>
+</html>`;
+
 /* ----------------------------------------------------------------
    Background cleanup: periodically purge expired links so they
    don't just accumulate forever waiting to be reclaimed on demand.
@@ -172,12 +234,12 @@ app.get('/api/available/:phrase', readLimiter, async (req, res) => {
 
 /* ----------------------------------------------------------------
    POST /api/shorten
-   Body: { longUrl, phrase, ttl? }
-   Returns: { slug, deleteToken, expiresAt }
+   Body: { longUrl, phrase, ttl?, password?, turnstileToken? }
+   Returns: { slug, deleteToken, expiresAt, hasPassword }
 ----------------------------------------------------------------- */
 app.post('/api/shorten', createLimiter, async (req, res) => {
   try {
-    const { longUrl, phrase = '', ttl = 'never' } = req.body || {};
+    const { longUrl, phrase = '', ttl = 'never', password = '', turnstileToken = '' } = req.body || {};
 
     // 1) Validate input
     if (!isValidHttpUrl(longUrl)) {
@@ -188,6 +250,18 @@ app.post('/api/shorten', createLimiter, async (req, res) => {
     }
     if (!(ttl in TTL_HOURS)) {
       return res.status(400).json({ error: 'Invalid expiration option' });
+    }
+
+    // 1b) CAPTCHA - only enforced if TURNSTILE_SECRET_KEY is configured
+    const turnstile = await verifyTurnstile(turnstileToken, req.ip);
+    if (turnstile.checked && !turnstile.valid) {
+      return res.status(400).json({ error: 'Captcha verification failed — please try again' });
+    }
+
+    // 1c) Malicious URL screening - only enforced if GOOGLE_SAFE_BROWSING_API_KEY is configured
+    const safety = await checkUrlSafety(longUrl);
+    if (safety.checked && !safety.safe) {
+      return res.status(400).json({ error: 'This URL was flagged as unsafe and cannot be shortened' });
     }
 
     // 2) Normalize phrase - this is now the entire slug, so it's required
@@ -204,6 +278,7 @@ app.post('/api/shorten', createLimiter, async (req, res) => {
     const expiresAt = ttlToExpiresAt(ttl);
     const deleteToken = nanoid(24);
     const slug = safePhrase;
+    const passwordHash = password ? await hashPassword(password) : null;
 
     // 3) Reclaim the slug if it's held by an expired link, then insert.
     // A collision after this means the slug is taken by a still-live link.
@@ -211,8 +286,8 @@ app.post('/api/shorten', createLimiter, async (req, res) => {
 
     try {
       await pool.query(
-        'INSERT INTO urls (slug, long_url, delete_token, expires_at) VALUES ($1, $2, $3, $4)',
-        [slug, longUrl, deleteToken, expiresAt]
+        'INSERT INTO urls (slug, long_url, delete_token, expires_at, password_hash) VALUES ($1, $2, $3, $4, $5)',
+        [slug, longUrl, deleteToken, expiresAt, passwordHash]
       );
     } catch (e) {
       // 23505 = unique_violation
@@ -222,13 +297,18 @@ app.post('/api/shorten', createLimiter, async (req, res) => {
       throw e;
     }
 
-    // 4) Prime Redis (1 hour, or less if the link expires sooner)
-    const cacheTtlSeconds = expiresAt
-      ? Math.max(1, Math.min(3600, Math.floor((expiresAt.getTime() - Date.now()) / 1000)))
-      : 3600;
-    await redis.set(`slug:${slug}`, longUrl, 'EX', cacheTtlSeconds);
+    // 4) Prime Redis (1 hour, or less if the link expires sooner) - skip
+    // caching the destination for password-protected links, since the
+    // cache is keyed only by slug and would let /api/resolve bypass the
+    // password check via the cached value.
+    if (!passwordHash) {
+      const cacheTtlSeconds = expiresAt
+        ? Math.max(1, Math.min(3600, Math.floor((expiresAt.getTime() - Date.now()) / 1000)))
+        : 3600;
+      await redis.set(`slug:${slug}`, longUrl, 'EX', cacheTtlSeconds);
+    }
 
-    res.status(201).json({ slug, deleteToken, expiresAt });
+    res.status(201).json({ slug, deleteToken, expiresAt, hasPassword: !!passwordHash });
   } catch (e) {
     log.error(e);
     res.status(500).json({ error: 'Server error' });
@@ -237,13 +317,14 @@ app.post('/api/shorten', createLimiter, async (req, res) => {
 
 /* ----------------------------------------------------------------
    GET /api/resolve/:slug
-   Returns: { longUrl, cached:boolean } or 404 / 410
+   Returns: { longUrl, cached:boolean } or { passwordRequired: true },
+   or 404 / 410
 ----------------------------------------------------------------- */
 app.get('/api/resolve/:slug', readLimiter, async (req, res) => {
   const { slug } = req.params;
   try {
     const result = await pool.query(
-      'SELECT long_url, expires_at FROM urls WHERE slug = $1 LIMIT 1',
+      'SELECT long_url, expires_at, password_hash FROM urls WHERE slug = $1 LIMIT 1',
       [slug]
     );
 
@@ -251,11 +332,17 @@ app.get('/api/resolve/:slug', readLimiter, async (req, res) => {
       return res.status(404).json({ error: 'Link not found' });
     }
 
-    const { long_url: longUrl, expires_at: expiresAt } = result.rows[0];
+    const { long_url: longUrl, expires_at: expiresAt, password_hash: passwordHash } = result.rows[0];
 
     if (isExpired(expiresAt)) {
       await redis.del(`slug:${slug}`);
       return res.status(410).json({ error: 'This link has expired' });
+    }
+
+    if (passwordHash) {
+      // Don't reveal the destination or count a click until the password
+      // is verified via POST /api/unlock/:slug.
+      return res.status(401).json({ passwordRequired: true });
     }
 
     pool
@@ -269,6 +356,61 @@ app.get('/api/resolve/:slug', readLimiter, async (req, res) => {
 
     await redis.set(`slug:${slug}`, longUrl, 'EX', 3600);
     res.json({ longUrl, cached: false });
+  } catch (e) {
+    log.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/* ----------------------------------------------------------------
+   POST /api/unlock/:slug
+   Body: { password }
+   Verifies a link's password and returns the destination on success.
+   Rate limited tightly to slow down brute-force guessing.
+----------------------------------------------------------------- */
+const unlockLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please wait a minute and try again.' },
+});
+
+app.post('/api/unlock/:slug', unlockLimiter, async (req, res) => {
+  const { slug } = req.params;
+  const { password = '' } = req.body || {};
+
+  try {
+    const result = await pool.query(
+      'SELECT long_url, expires_at, password_hash FROM urls WHERE slug = $1 LIMIT 1',
+      [slug]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Link not found' });
+    }
+
+    const { long_url: longUrl, expires_at: expiresAt, password_hash: passwordHash } = result.rows[0];
+
+    if (isExpired(expiresAt)) {
+      return res.status(410).json({ error: 'This link has expired' });
+    }
+
+    if (!passwordHash) {
+      // Not actually protected - resolve normally
+      pool.query('UPDATE urls SET clicks = clicks + 1 WHERE slug = $1', [slug]).catch(() => {});
+      return res.json({ longUrl });
+    }
+
+    const ok = await verifyPassword(password, passwordHash);
+    if (!ok) {
+      return res.status(401).json({ error: 'Incorrect password' });
+    }
+
+    pool
+      .query('UPDATE urls SET clicks = clicks + 1 WHERE slug = $1', [slug])
+      .catch((e) => log.error(e, 'click increment failed'));
+
+    res.json({ longUrl });
   } catch (e) {
     log.error(e);
     res.status(500).json({ error: 'Server error' });
@@ -292,7 +434,7 @@ app.get('/api/urls/:slug/meta', readLimiter, async (req, res) => {
 
   try {
     const result = await pool.query(
-      'SELECT slug, long_url, clicks, expires_at, created_at FROM urls WHERE slug = $1 AND delete_token = $2 LIMIT 1',
+      'SELECT slug, long_url, clicks, expires_at, created_at, password_hash FROM urls WHERE slug = $1 AND delete_token = $2 LIMIT 1',
       [slug, token]
     );
     if (result.rows.length === 0) {
@@ -308,7 +450,64 @@ app.get('/api/urls/:slug/meta', readLimiter, async (req, res) => {
       expiresAt: row.expires_at,
       createdAt: row.created_at,
       expired: isExpired(row.expires_at),
+      hasPassword: !!row.password_hash,
     });
+  } catch (e) {
+    log.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/* ----------------------------------------------------------------
+   PATCH /api/urls/:slug
+   Body: { deleteToken, longUrl }
+   Lets whoever holds the delete token change where a link points,
+   without changing the slug itself.
+----------------------------------------------------------------- */
+app.patch('/api/urls/:slug', readLimiter, async (req, res) => {
+  const { slug } = req.params;
+  const { deleteToken, longUrl } = req.body || {};
+
+  if (!deleteToken) {
+    return res.status(400).json({ error: 'Missing delete token' });
+  }
+  if (!isValidHttpUrl(longUrl)) {
+    return res.status(400).json({ error: 'Invalid URL format' });
+  }
+  if (isBlocked(longUrl)) {
+    return res.status(400).json({ error: 'Blocked file type' });
+  }
+
+  const safety = await checkUrlSafety(longUrl);
+  if (safety.checked && !safety.safe) {
+    return res.status(400).json({ error: 'This URL was flagged as unsafe and cannot be used' });
+  }
+
+  try {
+    const result = await pool.query(
+      'UPDATE urls SET long_url = $1 WHERE slug = $2 AND delete_token = $3 RETURNING expires_at, password_hash',
+      [longUrl, slug, deleteToken]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(403).json({ error: 'Invalid token or link not found' });
+    }
+
+    const { expires_at: expiresAt, password_hash: passwordHash } = result.rows[0];
+
+    // Refresh (or clear) the cache to match the new destination
+    if (passwordHash) {
+      await redis.del(`slug:${slug}`);
+    } else {
+      const cacheTtlSeconds = expiresAt
+        ? Math.max(1, Math.min(3600, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000)))
+        : 3600;
+      if (cacheTtlSeconds > 0) {
+        await redis.set(`slug:${slug}`, longUrl, 'EX', cacheTtlSeconds);
+      }
+    }
+
+    res.json({ slug, longUrl });
   } catch (e) {
     log.error(e);
     res.status(500).json({ error: 'Server error' });
@@ -359,7 +558,7 @@ app.get('/r/:slug', readLimiter, async (req, res) => {
 
   try {
     const result = await pool.query(
-      'SELECT long_url, expires_at FROM urls WHERE slug = $1 LIMIT 1',
+      'SELECT long_url, expires_at, password_hash FROM urls WHERE slug = $1 LIMIT 1',
       [slug]
     );
 
@@ -367,11 +566,15 @@ app.get('/r/:slug', readLimiter, async (req, res) => {
       return res.status(404).send('Short link not found');
     }
 
-    const { long_url: longUrl, expires_at: expiresAt } = result.rows[0];
+    const { long_url: longUrl, expires_at: expiresAt, password_hash: passwordHash } = result.rows[0];
 
     if (isExpired(expiresAt)) {
       await redis.del(`slug:${slug}`);
       return res.status(410).send('This link has expired');
+    }
+
+    if (passwordHash) {
+      return res.status(200).type('html').send(passwordGateHtml(slug));
     }
 
     pool

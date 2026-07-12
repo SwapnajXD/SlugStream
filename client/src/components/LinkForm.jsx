@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link2, Tag, Send, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
-import { API_URL, FRONTEND_BASE } from '../config/constants.js';
+import { Link2, Tag, Send, AlertTriangle, CheckCircle2, XCircle, Lock } from 'lucide-react';
+import { API_URL, FRONTEND_BASE, TURNSTILE_SITE_KEY } from '../config/constants.js';
 import { validateUrl } from '../utils/validation.js';
 import { addToHistory } from '../utils/history.js';
 import { useToast } from './Toast.jsx';
+import Turnstile from './Turnstile.jsx';
 
 const TTL_OPTIONS = [
   { key: '1h', label: '1 hour' },
@@ -17,6 +18,9 @@ export default function LinkForm({ onCreated }) {
   const [longUrl, setLongUrl] = useState('');
   const [phrase, setPhrase] = useState('');
   const [ttl, setTtl] = useState('never');
+  const [wantsPassword, setWantsPassword] = useState(false);
+  const [password, setPassword] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [availability, setAvailability] = useState(null); // null | 'checking' | 'available' | 'taken'
@@ -64,13 +68,27 @@ export default function LinkForm({ onCreated }) {
       setError('Please enter a custom phrase for your link');
       return;
     }
+    if (wantsPassword && !password) {
+      setError('Please enter a password, or turn off password protection');
+      return;
+    }
+    if (TURNSTILE_SITE_KEY && !turnstileToken) {
+      setError('Please complete the CAPTCHA challenge');
+      return;
+    }
 
     setBusy(true);
     try {
       const res = await fetch(`${API_URL}/api/shorten`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ longUrl, phrase, ttl }),
+        body: JSON.stringify({
+          longUrl,
+          phrase,
+          ttl,
+          password: wantsPassword ? password : undefined,
+          turnstileToken,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to shorten');
@@ -79,6 +97,8 @@ export default function LinkForm({ onCreated }) {
       onCreated({ ...data, longUrl });
       showToast('Link created', { tone: 'success' });
       setPhrase('');
+      setPassword('');
+      setWantsPassword(false);
       setAvailability(null);
     } catch (err) {
       setError(err.message);
@@ -144,6 +164,30 @@ export default function LinkForm({ onCreated }) {
           ))}
         </div>
       </div>
+
+      <div className="field">
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={wantsPassword}
+            onChange={(e) => setWantsPassword(e.target.checked)}
+          />
+          <Lock size={13} /> Protect with a password
+        </label>
+        {wantsPassword && (
+          <div className="input-row" style={{ marginTop: 6 }}>
+            <Lock size={16} />
+            <input
+              type="password"
+              placeholder="Choose a password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+        )}
+      </div>
+
+      <Turnstile onVerify={setTurnstileToken} onExpire={() => setTurnstileToken('')} />
 
       <button type="submit" className="primary" disabled={busy || availability === 'taken'}>
         <Send size={15} />
