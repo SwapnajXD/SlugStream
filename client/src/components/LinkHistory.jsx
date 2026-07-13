@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Trash2, MousePointerClick, Clock, FolderClock, Lock, Pencil, Check, X } from 'lucide-react';
+import { Trash2, MousePointerClick, Clock, FolderClock, Lock, Pencil, Check, X, Share2 } from 'lucide-react';
 import { API_URL, FRONTEND_BASE } from '../config/constants.js';
 import { removeFromHistory } from '../utils/history.js';
 import { getFaviconUrl, getHostname } from '../utils/linkPreview.js';
 import { useLinkHistoryMeta } from '../hooks/useLinkHistoryMeta.js';
 import { validateUrl } from '../utils/validation.js';
+import { canWebShare, webShare } from '../utils/share.js';
 import { useToast } from './Toast.jsx';
 
 export default function LinkHistory({ refreshKey, onChanged }) {
@@ -19,6 +20,11 @@ export default function LinkHistory({ refreshKey, onChanged }) {
   }, [refreshKey]);
 
   const list = localEntries ?? entries;
+
+  const share = async (entry) => {
+    const ok = await webShare({ title: 'Aliasly link', url: `${FRONTEND_BASE}/${entry.slug}` });
+    if (!ok) showToast('Could not open the share sheet', { tone: 'error' });
+  };
 
   const del = async (entry) => {
     try {
@@ -125,6 +131,11 @@ export default function LinkHistory({ refreshKey, onChanged }) {
               {!isEditing && (
                 <button className="icon-btn" title="Edit destination" onClick={() => startEdit(entry)}>
                   <Pencil size={14} />
+                </button>
+              )}
+              {canWebShare() && (
+                <button className="icon-btn" title="Share link" onClick={() => share(entry)}>
+                  <Share2 size={14} />
                 </button>
               )}
               <button className="icon-btn" title="Delete link" onClick={() => del(entry)}>

@@ -18,6 +18,7 @@ A fully containerized, scalable URL Shortener application built with a modern fu
 - A personal stats dashboard (links, total clicks, active/expired/protected counts) from your own browser history
 - Anonymous link history stored in your browser, with delete-by-token support
 - QR code for every generated link
+- One-tap native sharing (Web Share API) on supported browsers/devices, with a Copy fallback everywhere else
 - Optional malicious-URL screening via Google Safe Browsing (opt-in via API key)
 - Optional CAPTCHA (Cloudflare Turnstile) on link creation (opt-in via site/secret keys)
 - PWA-installable (manifest + icon) and Open Graph/Twitter Card tags for nicer link previews

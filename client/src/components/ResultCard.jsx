@@ -1,9 +1,10 @@
-import { Copy, QrCode, Trash2, Clock, MousePointerClick, Lock, Pencil, Check, X } from 'lucide-react';
+import { Copy, QrCode, Trash2, Clock, MousePointerClick, Lock, Pencil, Check, X, Share2 } from 'lucide-react';
 import { useState } from 'react';
 import { FRONTEND_BASE, API_URL } from '../config/constants.js';
 import { removeFromHistory } from '../utils/history.js';
 import { getFaviconUrl, getHostname } from '../utils/linkPreview.js';
 import { validateUrl } from '../utils/validation.js';
+import { canWebShare, webShare } from '../utils/share.js';
 import { useToast } from './Toast.jsx';
 
 function formatExpiry(expiresAt) {
@@ -28,6 +29,11 @@ export default function ResultCard({ slug, deleteToken, expiresAt, hasPassword, 
     } catch {
       showToast('Could not copy — copy it manually', { tone: 'error' });
     }
+  };
+
+  const share = async () => {
+    const ok = await webShare({ title: 'Aliasly link', url: full });
+    if (!ok) showToast('Could not open the share sheet', { tone: 'error' });
   };
 
   const del = async () => {
@@ -114,6 +120,9 @@ export default function ResultCard({ slug, deleteToken, expiresAt, hasPassword, 
 
       <div className="case-file-actions">
         <button className="ghost" onClick={copy}><Copy size={14} /> Copy</button>
+        {canWebShare() && (
+          <button className="ghost" onClick={share}><Share2 size={14} /> Share</button>
+        )}
         <button className="ghost" onClick={() => setShowQr((v) => !v)}>
           <QrCode size={14} /> {showQr ? 'Hide QR' : 'Show QR'}
         </button>
